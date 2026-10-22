@@ -151,4 +151,22 @@ if [ "@hip_mpitest_have_vmm@" = "1" ] ; then
     ExecTest "hip_sendtoself_stress"    "1" "32 1048576" "V"
 fi
 
+# Fabric VMM ('F') buffers. Only exercised when configured with --enable-fabric
+# and ROCm >= 7.14 (@hip_mpitest_have_fabric@). These buffers use
+# hipMemHandleTypeFabric so that the physical memory can be shared across nodes
+# over an xGMI/NVLink fabric. The test matrix mirrors the VMM block above.
+if [ "@hip_mpitest_have_fabric@" = "1" ] ; then
+    ExecTest "hip_pt2pt_bl"             "2" "32 1048576" "D H M O R F"
+    ExecTest "hip_pt2pt_nb"             "2" "32 1048576" "D H M O R F"
+    ExecTest "hip_sendtoself"           "1" "32 1048576" "D H M O R F"
+    ExecTest "hip_pt2pt_bsend"          "2" "32 1048576" "F"
+    ExecTest "hip_pt2pt_ssend"          "2" "32 1048576" "F"
+    ExecTest "hip_pt2pt_nb_testall"     "2" "32 1048576" "F"
+    ExecTest "hip_pt2pt_persistent"     "2" "32 1048576" "F"
+    ExecTest "hip_alltoallv"            "4" "1024"       "D F"
+    ExecTest "hip_allgatherv"           "4" "1024"       "D F"
+    ExecTest "hip_pt2pt_nb_stress"      "2" "32 1048576" "F"
+    ExecTest "hip_sendtoself_stress"    "1" "32 1048576" "F"
+fi
+
 printf "\n Executed %d Tests (%d passed %d failed)\n" $COUNTER $SUCCESS $FAILED

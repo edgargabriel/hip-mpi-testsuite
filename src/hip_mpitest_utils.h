@@ -61,6 +61,16 @@
 #define SET_MEMBUF_TYPE_VMM(_bufchar, _membuf)
 #endif
 
+/* Fabric ('F') dispatch follows the same pattern as VMM above. */
+#if HIP_MPITEST_HAVE_FABRIC
+#define SET_MEMBUF_TYPE_FABRIC(_bufchar, _membuf)            \
+   else if (strncmp(_bufchar, "F", 1) == 0) {                \
+       _membuf = new hip_mpitest_buffer_fabric;              \
+   }
+#else
+#define SET_MEMBUF_TYPE_FABRIC(_bufchar, _membuf)
+#endif
+
 #define SET_MEMBUF_TYPE(_bufchar, _membuf, _argc, _argv, _comm) {  \
    if (strncmp(_bufchar, "D", 1) == 0 ){                     \
        _membuf = new hip_mpitest_buffer_device;              \
@@ -81,6 +91,7 @@
        _membuf = new hip_mpitest_buffer_async;               \
    }                                                         \
    SET_MEMBUF_TYPE_VMM(_bufchar, _membuf)                    \
+   SET_MEMBUF_TYPE_FABRIC(_bufchar, _membuf)                 \
    else {                                                    \
        printf("Invalid input %s\n", _bufchar);               \
        print_help(_argc, _argv);                             \
@@ -109,6 +120,9 @@ static void print_help (int argc, char **argv)
                "         A      Asynchronous device memory (i.e. hipMallocAsync)\n"
 #if HIP_MPITEST_HAVE_VMM
                "         V      Virtual Memory Management device memory (i.e. hipMemCreate/Map)\n"
+#endif
+#if HIP_MPITEST_HAVE_FABRIC
+               "         F      Fabric VMM device memory (i.e. hipMemCreate with hipMemHandleTypeFabric)\n"
 #endif
 	       "   elements:  number of elements to send/recv\n"
                "   sleepTime: time in seconds to sleep (optional)\n");

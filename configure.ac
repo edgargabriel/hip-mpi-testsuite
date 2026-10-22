@@ -169,6 +169,29 @@ AC_MSG_CHECKING([whether to enable the VMM ('V') memory type])
 AC_MSG_RESULT([$hip_mpitest_have_vmm (requested=$enable_vmm_requested, HIP_VERSION=$hip_mpitest_hip_version, minimum=$hip_mpitest_vmm_min_version)])
 AC_SUBST(hip_mpitest_have_vmm)
 
+# The Fabric ('F') memory type is opt-in, following the same pattern as VMM.
+# It requires --enable-fabric, the same HIP VMM driver APIs as VMM, and
+# ROCm/HIP >= 7.14 where hipMemHandleTypeFabric was introduced.
+hip_mpitest_fabric_min_version=71400000
+
+enable_fabric_requested=no
+AC_ARG_ENABLE(fabric,
+[  --enable-fabric         enable the Fabric VMM ('F') memory type for testing; also requires ROCm/HIP >= 7.14 (default=no)],
+[enable_fabric_requested=yes])
+
+let hip_mpitest_have_fabric=0
+if test "$enable_fabric_requested" = "yes" ; then
+    if test "$HIP_MPITEST_HAVE_VMM_INT" = "1" && \
+       test "$hip_mpitest_hip_version" -ge "$hip_mpitest_fabric_min_version" ; then
+        hip_mpitest_have_fabric=1
+    else
+        AC_MSG_WARN([--enable-fabric requested but fabric VMM is unavailable (APIs_link=$HIP_MPITEST_HAVE_VMM_INT, HIP_VERSION=$hip_mpitest_hip_version, minimum=$hip_mpitest_fabric_min_version); leaving the Fabric memory type disabled.])
+    fi
+fi
+AC_MSG_CHECKING([whether to enable the Fabric VMM ('F') memory type])
+AC_MSG_RESULT([$hip_mpitest_have_fabric (requested=$enable_fabric_requested, HIP_VERSION=$hip_mpitest_hip_version, minimum=$hip_mpitest_fabric_min_version)])
+AC_SUBST(hip_mpitest_have_fabric)
+
 ucc_support=no;
 HIP_UCC_SUPPORT=`ompi_info --parsable | grep coll | grep ucc | wc -l`
   if [ test  "$HIP_UCC_SUPPORT" != "0" ] ; then

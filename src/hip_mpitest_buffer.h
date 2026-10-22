@@ -39,10 +39,11 @@ enum HIP_MPITEST_MEMTYPE {
       HIP_MPITEST_MEMTYPE_HOSTREGISTER,
       HIP_MPITEST_MEMTYPE_ASYNC,
       HIP_MPITEST_MEMTYPE_VMM,
+      HIP_MPITEST_MEMTYPE_FABRIC,
       HIP_MPITEST_MEMTYPE_LAST
 };
 
-const char hip_mpitest_memtype_chars[HIP_MPITEST_MEMTYPE_LAST] = {'H','D','M','O','R','A','V'};
+const char hip_mpitest_memtype_chars[HIP_MPITEST_MEMTYPE_LAST] = {'H','D','M','O','R','A','V','F'};
 
 class hip_mpitest_buffer {
  protected:
@@ -443,6 +444,32 @@ class hip_mpitest_buffer_vmm : public hip_mpitest_buffer {
     }
 };
 #endif  /* HIP_MPITEST_HAVE_VMM */
+
+#if HIP_MPITEST_HAVE_FABRIC
+/* Fabric-handle VMM device memory: identical allocation sequence to the VMM
+ * type above, but requests hipMemHandleTypeFabric instead of
+ * hipMemHandleTypePosixFileDescriptor.  The resulting handle can be shared
+ * across nodes over an xGMI/NVLink fabric, allowing remote peers to import and
+ * map the physical memory.  Compiled only when configured with --enable-fabric
+ * and ROCm >= 7.14 (see HIP_MPITEST_HAVE_FABRIC). */
+class hip_mpitest_buffer_fabric : public hip_mpitest_buffer_vmm {
+ public:
+    hip_mpitest_buffer_fabric() {
+        memtype = HIP_MPITEST_MEMTYPE_FABRIC;
+        memchar = 'F';
+        strncpy(memname, "hipMemCreate/Fabric", 32);
+
+        // Re-run the setup from the VMM base ctor with the fabric handle type.
+        // setup_err, deviceId and granularity were already set by the VMM ctor;
+        // only override them if the base setup succeeded.
+        if (setup_err != hipSuccess) return;
+
+        prop.requestedHandleTypes = hipMemHandleTypeFabric;
+        setup_err = hipMemGetAllocationGranularity(&granularity, &prop,
+                  hipMemAllocationGranularityMinimum);
+    }
+};
+#endif  /* HIP_MPITEST_HAVE_FABRIC */
 
 // Some convinience macros
 #define ALLOCATE_SENDBUFFER(_sendbuf, _tmp_sendbuf, _type, _elements, _extent, _rank, _comm, _init, _label) { \

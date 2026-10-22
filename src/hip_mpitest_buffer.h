@@ -67,6 +67,7 @@ class hip_mpitest_buffer {
     virtual hipError_t  CopyFrom(void* dst, size_t nBytes)=0;
     virtual hipError_t  Free ()=0;
     virtual bool        NeedsStagingBuffer()=0;
+    virtual ~hip_mpitest_buffer() {}
 };
 
 
@@ -269,12 +270,22 @@ class hip_mpitest_buffer_hostregister: public hip_mpitest_buffer {
 
 class hip_mpitest_buffer_async: public hip_mpitest_buffer {
     hipStream_t stream;
+    hipError_t  setup_err;
  public:
     hip_mpitest_buffer_async () {
 	memtype = HIP_MPITEST_MEMTYPE_ASYNC;
 	memchar = 'A';
 	strncpy (memname, "hipMallocAsync", 32);
 	stream = nullptr;
+	// Create the stream once per object; the status is checked in Allocate
+	// since a constructor cannot report an error.
+	setup_err = hipStreamCreate(&stream);
+    }
+
+    ~hip_mpitest_buffer_async () {
+	if (stream != nullptr) {
+	    (void)hipStreamDestroy(stream);
+	}
     }
 
     bool NeedsStagingBuffer() {
@@ -282,11 +293,10 @@ class hip_mpitest_buffer_async: public hip_mpitest_buffer {
     }
 
     hipError_t Allocate (size_t nBytes) {
-	hipError_t err = hipStreamCreate(&stream);
-	if (err != hipSuccess) {
-	    return err;
+	if (setup_err != hipSuccess) {
+	    return setup_err;
 	}
-	err = hipMallocAsync((void **)&buffer, nBytes, stream);
+	hipError_t err = hipMallocAsync((void **)&buffer, nBytes, stream);
 	if (err != hipSuccess) {
 	    return err;
 	}
@@ -299,14 +309,9 @@ class hip_mpitest_buffer_async: public hip_mpitest_buffer {
 	if (err != hipSuccess) {
 	    return err;
 	}
-	err = hipStreamSynchronize(stream);
-	if (err != hipSuccess) {
-	    return err;
-	}
 	buffer = NULL;
-	hipError_t derr = hipStreamDestroy(stream);
-	stream = nullptr;
-	return derr;
+	// The stream is reused across allocations and destroyed in the destructor.
+	return hipStreamSynchronize(stream);
     }
 
     hipError_t CopyTo(void *src, size_t nBytes) {
@@ -336,6 +341,10 @@ class hip_mpitest_buffer_vmm : public hip_mpitest_buffer {
  protected:
     hipMemGenericAllocationHandle_t vmm_handle;
     size_t                          vmm_padded_size;
+    int                             deviceId;
+    size_t                          granularity;
+    hipMemAllocationProp            prop;
+    hipError_t                      setup_err;
 
  public:
     hip_mpitest_buffer_vmm() {
@@ -343,6 +352,29 @@ class hip_mpitest_buffer_vmm : public hip_mpitest_buffer {
         memchar         = 'V';
         strncpy(memname, "hipMemCreate/Map", 32);
         vmm_padded_size = 0;
+        deviceId        = 0;
+        granularity     = 0;
+
+        // Query the device, VMM support and allocation granularity once per
+        // object; the status is checked in Allocate since a constructor cannot
+        // report an error.
+        setup_err = hipGetDevice(&deviceId);
+        if (setup_err != hipSuccess) return;
+
+        int vmmSupported = 0;
+        setup_err = hipDeviceGetAttribute(&vmmSupported,
+                  hipDeviceAttributeVirtualMemoryManagementSupported, deviceId);
+        if (setup_err != hipSuccess) return;
+        if (!vmmSupported) { setup_err = hipErrorNotSupported; return; }
+
+        prop                      = {};
+        prop.type                 = hipMemAllocationTypePinned;
+        prop.location.type        = hipMemLocationTypeDevice;
+        prop.location.id          = deviceId;
+        prop.requestedHandleTypes = hipMemHandleTypePosixFileDescriptor;
+
+        setup_err = hipMemGetAllocationGranularity(&granularity, &prop,
+                  hipMemAllocationGranularityMinimum);
     }
 
     bool NeedsStagingBuffer() {
@@ -351,27 +383,8 @@ class hip_mpitest_buffer_vmm : public hip_mpitest_buffer {
 
     hipError_t Allocate(size_t nBytes) {
         hipError_t err;
-        int        deviceId = 0;
 
-        err = hipGetDevice(&deviceId);
-        if (err != hipSuccess) return err;
-
-        int vmmSupported = 0;
-        err = hipDeviceGetAttribute(&vmmSupported,
-                  hipDeviceAttributeVirtualMemoryManagementSupported, deviceId);
-        if (err != hipSuccess) return err;
-        if (!vmmSupported) return hipErrorNotSupported;
-
-        hipMemAllocationProp prop = {};
-        prop.type                 = hipMemAllocationTypePinned;
-        prop.location.type        = hipMemLocationTypeDevice;
-        prop.location.id          = deviceId;
-        prop.requestedHandleTypes = hipMemHandleTypePosixFileDescriptor;
-
-        size_t granularity = 0;
-        err = hipMemGetAllocationGranularity(&granularity, &prop,
-                  hipMemAllocationGranularityMinimum);
-        if (err != hipSuccess) return err;
+        if (setup_err != hipSuccess) return setup_err;
 
         vmm_padded_size = ((nBytes + granularity - 1) / granularity) * granularity;
 
